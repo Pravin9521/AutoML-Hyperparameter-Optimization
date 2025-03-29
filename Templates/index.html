@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!DOCTYPE html> 
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -39,7 +39,9 @@
 <body>
     <div class="container mt-5">
         <h2 class="mb-4">Upload a Dataset (CSV)</h2>
-        <form id="upload-form" action="/" method="post" enctype="multipart/form-data" onsubmit="showLoading()">
+
+        <!-- ✅ Updated form to submit to `/upload` -->
+        <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data" onsubmit="showLoading()">
             <div class="form-group">
                 <input type="file" class="form-control" name="file" required>
             </div>

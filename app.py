@@ -15,7 +15,7 @@ from werkzeug.utils import secure_filename
 from sklearn.metrics import accuracy_score, f1_score, mean_squared_error
 import joblib
 
-# ✅ Initialize Flask app
+# ✅ Initialize Flask App
 app = Flask(__name__)
 app.config["UPLOAD_FOLDER"] = "uploads"
 app.config["MODEL_FOLDER"] = "models"
@@ -25,8 +25,61 @@ os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 os.makedirs(app.config["MODEL_FOLDER"], exist_ok=True)
 os.makedirs(app.config["SCALER_FOLDER"], exist_ok=True)
 
-# ✅ Data Cleaning & Preprocessing
-def clean_and_preprocess_data(df, target_column, scaler=None, fit_scaler=True):
+
+# ✅ Home Route
+@app.route("/", methods=["GET"])
+def index():
+    return render_template("index.html")
+
+
+# ✅ Upload & Process Route
+@app.route("/upload", methods=["POST"])
+def upload():
+    try:
+        if "file" not in request.files:
+            return jsonify({"error": "No file part"}), 400
+
+        file = request.files["file"]
+        target_column = request.form.get("target_column", "").strip()
+
+        if file.filename == "":
+            return jsonify({"error": "No selected file"}), 400
+        if not target_column:
+            return jsonify({"error": "Target column is required"}), 400
+
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+        file.save(file_path)
+
+        # ✅ Load dataset
+        df = pd.read_csv(file_path)
+
+        # ✅ Preprocess Data
+        X, y, scaler, is_classification = clean_and_preprocess_data(df, target_column)
+
+        # ✅ Train Models
+        results, best_model_name, model_path = train_and_compare_models(X, y, is_classification)
+
+        # ✅ Suggest Hyperparameters
+        hyperparameters = suggest_hyperparameters(X, y)
+
+        # ✅ Send Data to `result.html`
+        return render_template(
+            "result.html",
+            results=results,
+            best_model=best_model_name,
+            model_path=model_path,
+            scaler_path="N/A",  # If you saved the scaler, update this
+            model_type="classification" if is_classification else "regression",
+            hyperparameters=hyperparameters  # ✅ Avoids JSON serialization error
+        )
+
+    except Exception as e:
+        return jsonify({"error": f"Error processing dataset: {str(e)}"}), 500
+
+
+# ✅ Data Preprocessing
+def clean_and_preprocess_data(df, target_column):
     df = df.copy()
 
     # ✅ Clean column names
@@ -61,11 +114,8 @@ def clean_and_preprocess_data(df, target_column, scaler=None, fit_scaler=True):
     X = pd.get_dummies(X, columns=categorical_cols, drop_first=True)
 
     # ✅ Standardize numerical features
-    if fit_scaler:
-        scaler = StandardScaler()
-        X.iloc[:, :] = scaler.fit_transform(X)
-    else:
-        X.iloc[:, :] = scaler.transform(X)
+    scaler = StandardScaler()
+    X.iloc[:, :] = scaler.fit_transform(X)
 
     return X, y, scaler, is_classification
 
@@ -107,9 +157,10 @@ def train_and_compare_models(X, y, is_classification):
     }
 
     best_score = -np.inf
-    best_models = {}
-    results = {}
+    best_model = None
+    best_model_name = ""
 
+    results = {}
     for name, model_info in param_grids.items():
         model = model_info['model']
         param_grid = model_info['params']
@@ -133,19 +184,10 @@ def train_and_compare_models(X, y, is_classification):
 
         if score > best_score:
             best_score = score
-            best_models = {name: final_model}  # Reset best models dictionary
-        elif score == best_score:
-            best_models[name] = final_model  # Store multiple top models
+            best_model = final_model
+            best_model_name = name
 
-    # ✅ Handle multiple models with the same best score
-    if len(best_models) > 1:
-        best_model_name = min(best_models, key=lambda x: (len(x), x))  # Choose the simplest model by name length
-    else:
-        best_model_name = list(best_models.keys())[0]
-
-    best_model = best_models[best_model_name]
-
-    # ✅ Save best model
+    # ✅ Save Best Model
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     model_path = os.path.join(app.config["MODEL_FOLDER"], f"{best_model_name}_{timestamp}.pkl")
     joblib.dump(best_model, model_path)
@@ -153,58 +195,15 @@ def train_and_compare_models(X, y, is_classification):
     return results, best_model_name, model_path
 
 
-
-# ✅ File Upload & Model Training Route
-from flask import Flask, render_template, request, jsonify, redirect, url_for
-
-@app.route("/", methods=["GET", "POST"])
-def index():
-    if request.method == "POST":
-        file = request.files["file"]
-        if file and file.filename.endswith(".csv"):
-            filepath = os.path.join(app.config["UPLOAD_FOLDER"], secure_filename(file.filename))
-            file.save(filepath)
-
-            df = pd.read_csv(filepath)
-            target_column = request.form.get("target_column")
-
-            if target_column not in df.columns:
-                return jsonify({"error": "Invalid target column"}), 400
-
-            X, y, scaler, is_classification = clean_and_preprocess_data(df, target_column)
-            results, best_model_name, model_path = train_and_compare_models(X, y, is_classification)
-
-            scaler_path = os.path.join(app.config["SCALER_FOLDER"], f"scaler_{best_model_name}.pkl")
-            joblib.dump(scaler, scaler_path)
-
-            return render_template("result.html", 
-                                   results=results, 
-                                   best_model=best_model_name, 
-                                   model_path=model_path, 
-                                   scaler_path=scaler_path,
-                                   model_type="classification" if is_classification else "regression")
-
-    return render_template("index.html")
-
-
-
-# ✅ Prediction Route
-@app.route("/predict", methods=["POST"])
-def predict():
-    input_data = request.json.get("data")
-    model_path = request.json.get("model_path")
-    scaler_path = request.json.get("scaler_path")
-
-    model = joblib.load(model_path)
-    scaler = joblib.load(scaler_path)
-    input_df = pd.DataFrame([input_data])
-
-    # ✅ Apply saved scaler
-    input_df.iloc[:, :] = scaler.transform(input_df)
-
-    prediction = model.predict(input_df)
-
-    return jsonify({"prediction": prediction.tolist()})
+# ✅ Suggest Hyperparameters
+def suggest_hyperparameters(X, y):
+    return {
+        "Random Forest": {"n_estimators": [100, 200], "max_depth": [None, 10]},
+        "XGBoost": {"n_estimators": [100], "learning_rate": [0.01, 0.1]},
+        "LightGBM": {"n_estimators": [100], "learning_rate": [0.01, 0.1]},
+        "Logistic Regression": {"C": [0.1, 1.0], "solver": ["liblinear"]},
+        "KNN": {"n_neighbors": [3, 5], "weights": ["uniform", "distance"]},
+    }
 
 
 # ✅ Run Flask App

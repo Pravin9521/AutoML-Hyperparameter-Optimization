@@ -1,0 +1,118 @@
+<!DOCTYPE html> 
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoML - Upload Dataset</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            padding: 20px;
+        }
+        .container {
+            max-width: 700px;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        .btn-primary {
+            width: 100%;
+        }
+        .form-group {
+            margin-bottom: 15px;
+            text-align: left;
+        }
+        .loader {
+            display: none;
+            margin-top: 20px;
+        }
+        .form-check {
+            padding: 10px;
+            border: 1px solid #eee;
+            border-radius: 5px;
+            margin-bottom: 5px;
+        }
+        .form-check:hover {
+            background-color: #f8f9fa;
+        }
+        .models-container {
+            max-height: 250px;
+            overflow-y: auto;
+            padding: 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+        .model-selection-header {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .validation-message {
+            color: red;
+            display: none;
+            margin-top: 5px;
+        }
+    </style>
+    <script>
+        function showLoading() {
+            document.getElementById("upload-form").style.display = "none";
+            document.getElementById("loader").style.display = "block";
+        }
+        
+        function validateForm() {
+            // Check if at least one model is selected
+            const checkboxes = document.querySelectorAll('input[name="selected_models"]:checked');
+            if (checkboxes.length === 0) {
+                document.getElementById("model-validation").style.display = "block";
+                return false;
+            }
+            document.getElementById("model-validation").style.display = "none";
+            showLoading();
+            return true;
+        }
+    </script>
+</head>
+<body>
+    <div class="container mt-5">
+        <h2 class="mb-4">Upload a Dataset (CSV)</h2>
+        <!-- ✅ Updated form to include model selection -->
+        <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data" onsubmit="return validateForm()">
+            <div class="form-group">
+                <label for="file">Select CSV File:</label>
+                <input type="file" class="form-control" name="file" id="file" required>
+            </div>
+            <div class="form-group">
+                <label for="target_column">Enter Target Column Name:</label>
+                <input type="text" class="form-control" name="target_column" id="target_column" required>
+            </div>
+            
+            <div class="form-group">
+                <label class="model-selection-header">Select Models to Run:</label>
+                <div class="models-container">
+                    {% for model_key, model_name in available_models.items() %}
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="selected_models" id="{{ model_key }}" value="{{ model_key }}">
+                        <label class="form-check-label" for="{{ model_key }}">
+                            {{ model_name }}
+                        </label>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div id="model-validation" class="validation-message">Please select at least one model</div>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">Upload & Process</button>
+        </form>
+        <!-- Loader -->
+        <div id="loader" class="loader">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Processing...</span>
+            </div>
+            <p>Analyzing dataset, please wait...</p>
+        </div>
+    </div>
+</body>
+</html>
